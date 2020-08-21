@@ -1,25 +1,132 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+title: "PA1_template"
+output: html_document
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Introduction
+This document is an R Markdown file for Reproducible Research in Coursera, designed to answer the first project in this class.  As a summary, this project is designed to look at activity data and find answers as to the averages and activity of people using activity trackers.  
 
-## Loading and preprocessing the data
+#### Reading the data into R
+The first point is to download the data, as below.  Note that the working directory may have to be changed to the proper working directory for each device, as the data can be downloaded directly from the source.
 
+```{r reading the data, echo=TRUE}
+#setWD()
+unzip(zipfile="repdata_data_activity.zip") 
+data <- read.csv(file='activity.csv', header=TRUE)
+```
 
+The data as found is in a currently readable format, however it may have to be transformed later.
 
-## What is mean total number of steps taken per day?
+## Question 1
+The first question that is to be answered is to determine the total number of steps/day.  To do this, the following R code will need to be run.
+```{r total data q1, echo=TRUE}
+total_steps <- aggregate(steps~date, data, FUN=sum)
+```
+From here, a histogram of this data is requested to show the common behavior of all participants in the study.
 
+```{r histogram q1, echo=TRUE}
+hist(total_steps$steps, main="Total Steps/Day", xlab="Number of Steps")
+```
 
+As can be seen, the total number of steps per day for the participants in the study tends to fall somewhere between 10,000 and 15,000 steps per day.  What about the mean and median number of steps per day?  To determine this, the following R code will find the answer.
+```{r mean/median q1, echo=TRUE}
+mean_steps <- mean(total_steps$steps, na.rm=TRUE)
+medsteps<-median(total_steps$steps, na.rm=TRUE)
+print(mean_steps)
+print(medsteps)
+```
 
-## What is the average daily activity pattern?
+So it appears that the mean number of steps per day is approximately 10766 steps, with the median being 10765 steps.
 
+## Question 2
 
+The second question that is required to be answered is the average daily activity pattern.  To do this, a time-series plot of the data is requested.  This plot was created using the ggplot2 package for this project, and the following code should replicate the plot.
+```{r time series plot q2, echo=TRUE}
+library(ggplot2)
+mean_steps_by_interval <- aggregate(steps~interval, data, mean)
+ggplot(data=mean_steps_by_interval, aes(x=interval, y= steps)) +
+  geom_line() +
+  ggtitle("Average Daily Activity Pattern") +
+  xlab("5-minute Interval") +
+  ylab("Average Number of Steps")
+```
 
-## Imputing missing values
+As can be seen, there appears to be a spike in steps/day around the 800th interval, and after that spike the is a fall followed by an average level of activity throughout the day.  At the end of the day, activity trails off as participants likely fell asleep.  The second question to be answered, however, is which interval has the highest activity?  Running the following R code determines the interval.
+```{r highest activity interval, echo=TRUE}
+max_interval <- mean_steps_by_interval[which.max(mean_steps_by_interval$steps),]
+print(max_interval)
+```
 
+The highest interval in question is interval 835, with an average number of steps of ~206 steps.
 
+## Question 3
+There is an issue with the dataset, however.  Looking at the values it is apparent that there are far too many NA values, or values without recorded data.  The total number of these values is found below.
+```{r na count, echo=TRUE}
+missing_values <- is.na(data$steps)
+missing_values_count <- sum(missing_values)
+print(missing_values_count)
+```
 
-## Are there differences in activity patterns between weekdays and weekends?
+These 2304 must be fixed.  There are a few different strategies that could be used to add data to these values, but I decided to use the 5-day average of the corresponding interval to add data to these values.  This can be performed using the following R code.
+```{r imputing the data, echo=TRUE}
+imp_data <- transform(data, steps=ifelse(is.na(data$steps),
+                                         mean_steps_by_interval$steps[match(data$interval, 
+                                                                      mean_steps_by_interval$interval)],
+                                         data$steps))
+```
+
+Running this creates the new data frame imp_data, which fills in the data for the NA values with the 5-day average of the corresponding interval.  From there, the project requests a new histogram with the imputed data.
+```{r histogram q3, echo=TRUE}
+imp_steps_by_int <- aggregate(steps~date, imp_data, sum)
+hist(imp_steps_by_int$steps, main="Imputed Number of Steps/Day", xlab="Number of Steps")
+```
+
+Using this strategy does increase the average values at 10,000 and 15,000. This is however expected, as the process does use average values for the NA points.  In fact, what is the new mean and median using this method?  And what is the difference from the original data set?
+```{r imputed average, echo=TRUE}
+imp_mean_steps <- mean(imp_steps_by_int$steps, na.rm=TRUE)
+imp_med_steps <- median(imp_steps_by_int$steps, na.rm=TRUE)
+diff_mean = imp_mean_steps - mean_steps
+diff_med = imp_med_steps - medsteps
+diff_total = sum(imp_steps_by_int$steps) - sum(total_steps$steps)
+cat("Imputed mean:", imp_mean_steps)
+cat(sep="\n")
+cat("Imputed median:", imp_med_steps)
+cat(sep="\n")
+cat("Difference in means:", diff_mean)
+cat(sep="\n")
+cat("Difference in medians :", diff_med)
+cat(sep="\n")
+cat("Total difference between imputed and actual data:", diff_total)
+```
+
+This method results in data that is very similar to the original data, with little to no difference between means and medians.  There is obviously a large difference between the total values, but since the NA values are originally treated as though they do not exist (effectively having a value of 0), this is expected.
+
+## Question 4
+
+The final question is to determine if there is a difference in activity patterns between weekends and weekdays.  To do this, the data set must be transformed to add a new column denoting if the study day occurs on a weekend or a weekday.  The following R code creates such a new data frame, using the imputed data.  A note here; this transformation can also be done earlier, when reading the data initially.
+```{r transforming the data frame, echo=TRUE}
+imp_data$date <- as.POSIXct(imp_data$date, format="%Y-%m-%d")
+imp_data_Date_trans <- data.frame(date=imp_data$date,
+                                  weekday=tolower(weekdays(imp_data$date)),
+                                  steps=imp_data$steps,
+                                  interval=imp_data$interval)
+
+imp_data_Date_trans <- cbind(imp_data,
+                             daytype=ifelse(imp_data_Date_trans$weekday =="saturday"|
+                                            imp_data_Date_trans$weekday=="sunday", "weekend", "weekday"))
+```
+
+Now the data frame imp_data_Date_trans is created, with the additional column of "daytype", an actual date format for the date column and using the imputed data frame created for question 3.  Now, the data must be plotted into a 2-panel time series plot for comparision.  This can be performed using the R code below.  Do note that while the plot is created here using the ggplot2 library, any plotting system can create the plot below
+```{r 2-panel time series plot, echo=TRUE}
+mean_imp_steps_by_day <- aggregate(steps~ interval + daytype, imp_data_Date_trans, mean)
+ggplot(data=mean_imp_steps_by_day, aes(x=interval, y=steps)) +
+  geom_line() +
+  facet_grid(daytype~.) +
+  ggtitle("Average Daily Activity Pattern") +
+  xlab("5-min Interval") +
+  ylab("Average Number of Steps")
+```
+Using this plot, it appears that the weekday plot has higher spikes of activity, but outside of those spikes a lower overall average number of steps than for the weekends.  Therefore, it is possible to conclude that the weekends have more activity throughout the day than the weekdays.  This may be as a result of the fact that most participants were likely working during the weekdays, whereas on the weekends participants may have been doing housework, exercising, shopping, etc.
